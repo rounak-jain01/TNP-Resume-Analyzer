@@ -2,7 +2,12 @@ from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from app.models.jd import JD
-from app.services.batch_service import get_faculty_batches, get_batch_by_id
+from app.services.batch_service import (
+    get_faculty_batches,
+    get_batch_by_id,
+    get_batch_results,
+    delete_batch,
+)
 from app.db.session import get_db
 from app.api.deps import require_role
 from app.schemas.jd import JDOut
@@ -89,6 +94,30 @@ def list_batches(
     current_user: User = Depends(require_role("faculty")),
 ):
     return get_faculty_batches(db, current_user.id)
+
+
+@router.delete("/batch/{batch_id}")
+def delete_faculty_batch(
+    batch_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("faculty")),
+):
+    deleted = delete_batch(
+        db,
+        batch_id,
+        current_user.id
+    )
+
+    if not deleted:
+        raise HTTPException(
+            status_code=404,
+            detail="Batch not found"
+        )
+
+    return {
+        "message": "Batch deleted successfully",
+        "batch_id": batch_id,
+    }
 
 
 @router.get("/batch/{batch_id}/results")

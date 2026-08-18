@@ -45,3 +45,8 @@ export const addResumesToBatch = async (batchId, files) => {
   });
   return res.data;
 };
+
+export const deleteBatch = async (batchId) => {
+  const res = await api.delete(`/faculty/batch/${batchId}`);
+  return res.data;
+};

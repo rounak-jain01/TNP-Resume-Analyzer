@@ -5,6 +5,7 @@ from app.models.batch import Batch, BatchResume
 from app.models.resume import Resume
 from app.models.analysis_result import AnalysisResult
 from collections import Counter
+from app.models.jd import JD
 
 
 def create_batch(db: Session, faculty_id: int, jd_id: int, batch_name: str | None) -> Batch:
@@ -126,3 +127,84 @@ def get_batch_insights(db: Session, batch_id: int):
         },
         "skill_gap": skill_gap,
     }
+
+
+def delete_batch(db: Session, batch_id: int, faculty_id: int):
+    batch = (
+        db.query(Batch)
+        .filter(
+            Batch.id == batch_id,
+            Batch.faculty_id == faculty_id
+        )
+        .first()
+    )
+
+    if not batch:
+        return None
+
+    jd_id = batch.jd_id
+
+    # Get resumes belonging to this batch
+    resume_ids = [
+        r[0]
+        for r in (
+            db.query(BatchResume.resume_id)
+            .filter(BatchResume.batch_id == batch_id)
+            .all()
+        )
+    ]
+
+    # Delete analysis results for this batch
+    if resume_ids:
+        (
+            db.query(AnalysisResult)
+            .filter(
+                AnalysisResult.resume_id.in_(resume_ids),
+                AnalysisResult.jd_id == jd_id
+            )
+            .delete(synchronize_session=False)
+        )
+
+    # Delete batch-resume mappings
+    (
+        db.query(BatchResume)
+        .filter(BatchResume.batch_id == batch_id)
+        .delete(synchronize_session=False)
+    )
+
+    # Delete resumes only if they are not used by another batch
+    for resume_id in resume_ids:
+        other_batch_link = (
+            db.query(BatchResume)
+            .filter(BatchResume.resume_id == resume_id)
+            .first()
+        )
+
+        if not other_batch_link:
+            db.query(Resume).filter(
+                Resume.id == resume_id
+            ).delete(synchronize_session=False)
+
+    # Delete batch
+    db.delete(batch)
+    db.flush()
+
+    # Delete JD only if it is not used by another batch
+    other_batch_with_jd = (
+        db.query(Batch)
+        .filter(Batch.jd_id == jd_id)
+        .first()
+    )
+
+    if not other_batch_with_jd:
+        db.query(JD).filter(
+            JD.id == jd_id
+        ).delete(synchronize_session=False)
+
+    db.commit()
+
+    return True
+
+
+
+
