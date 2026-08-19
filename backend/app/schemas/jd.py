@@ -1,20 +1,23 @@
-from pydantic import BaseModel
-from typing import Optional, Any
 from datetime import datetime
+from typing import Any
+
+from pydantic import BaseModel, ConfigDict
 
 
 class JDOut(BaseModel):
     id: int
     uploaded_by_id: int
-    company_name: Optional[str] = None
-    role_title: Optional[str] = None
-    file_type: str
+
+    company_name: str | None = None
+    role_title: str | None = None
+
+    must_have_skills: list[str] | None = None
+    nice_to_have_skills: list[str] | None = None
+    soft_skills_mentioned: list[str] | None = None
+    eligibility_criteria: Any | None = None
+
     source: str
-    must_have_skills: Optional[Any] = None
-    nice_to_have_skills: Optional[Any] = None
-    eligibility_criteria: Optional[Any] = None
-    parsed_at: Optional[datetime] = None
+    parsed_at: datetime | None = None
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)

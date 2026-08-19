@@ -1,20 +1,25 @@
-from pydantic import BaseModel
-from typing import Optional, Any
 from datetime import datetime
+from typing import Any
+
+from pydantic import BaseModel, ConfigDict
 
 
 class ResumeOut(BaseModel):
     id: int
     student_id: int
-    file_type: str
     version_no: int
-    summary: Optional[str] = None
-    skills: Optional[Any] = None
-    projects: Optional[Any] = None
-    certificates: Optional[Any] = None
-    education: Optional[Any] = None
-    parsed_at: Optional[datetime] = None
+
+    candidate_name: str | None = None
+    summary: str | None = None
+    cgpa: float | None = None
+    branch: str | None = None
+
+    skills: list[str] | None = None
+    projects: Any | None = None
+    certificates: Any | None = None
+    education: Any | None = None
+
+    parsed_at: datetime | None = None
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)

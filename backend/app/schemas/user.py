@@ -1,17 +1,14 @@
-from pydantic import BaseModel, EmailStr
-from typing import Optional
 from datetime import datetime
 
+from pydantic import BaseModel, ConfigDict, EmailStr
 
-# ---- Request Schemas ----
 
 class UserSignup(BaseModel):
     name: str
     email: EmailStr
     password: str
-    branch: Optional[str] = None
-    cgpa: Optional[str] = None
-    # role yaha nahi liya — student signup hamesha role="student" hoga (Step 24 mein enforce karenge)
+    branch: str | None = None
+    cgpa: str | None = None
 
 
 class UserLogin(BaseModel):
@@ -19,24 +16,22 @@ class UserLogin(BaseModel):
     password: str
 
 
-# ---- Response Schemas ----
-
 class UserOut(BaseModel):
     id: int
     name: str
     email: EmailStr
     role: str
-    branch: Optional[str] = None
-    cgpa: Optional[str] = None
+    branch: str | None = None
+    cgpa: str | None = None
     created_at: datetime
 
-    class Config:
-        from_attributes = True  # SQLAlchemy model se directly convert karne ke liye
+    model_config = ConfigDict(from_attributes=True)
 
 
 class Token(BaseModel):
     access_token: str
     token_type: str = "bearer"
+
 
 class FacultyCreate(BaseModel):
     name: str

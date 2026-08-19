@@ -1,14 +1,20 @@
+from collections import Counter
+
 from sqlalchemy.orm import Session
-from app.models.batch import Batch, BatchResume
-from app.models.resume import Resume
+
 from app.models.batch import Batch, BatchResume
 from app.models.resume import Resume
 from app.models.analysis_result import AnalysisResult
-from collections import Counter
 from app.models.jd import JD
 
 
-def create_batch(db: Session, faculty_id: int, jd_id: int, batch_name: str | None) -> Batch:
+def create_batch(
+    db: Session,
+    faculty_id: int,
+    jd_id: int,
+    batch_name: str | None,
+) -> Batch:
+
     batch = Batch(
         faculty_id=faculty_id,
         jd_id=jd_id,
@@ -16,29 +22,65 @@ def create_batch(db: Session, faculty_id: int, jd_id: int, batch_name: str | Non
         total_resumes=0,
         status="uploaded",
     )
+
     db.add(batch)
     db.commit()
     db.refresh(batch)
+
     return batch
 
-def increment_batch_total(db: Session, batch: Batch, added_count: int):
+
+def increment_batch_total(
+    db: Session,
+    batch: Batch,
+    added_count: int,
+) -> Batch:
+
     batch.total_resumes += added_count
+
     db.commit()
     db.refresh(batch)
+
     return batch
 
-def add_resume_to_batch(db: Session, batch_id: int, resume_id: int):
-    link = BatchResume(batch_id=batch_id, resume_id=resume_id)
+
+def add_resume_to_batch(
+    db: Session,
+    batch_id: int,
+    resume_id: int,
+) -> BatchResume:
+
+    link = BatchResume(
+        batch_id=batch_id,
+        resume_id=resume_id,
+    )
+
     db.add(link)
+    db.flush()
+
+    return link
 
 
-def finalize_batch(db: Session, batch: Batch, resume_count: int):
+def finalize_batch(
+    db: Session,
+    batch: Batch,
+    resume_count: int,
+) -> Batch:
+
     batch.total_resumes = resume_count
+    batch.status = "completed"
+
     db.commit()
     db.refresh(batch)
+
     return batch
 
-def get_faculty_batches(db: Session, faculty_id: int):
+
+def get_faculty_batches(
+    db: Session,
+    faculty_id: int,
+) -> list[Batch]:
+
     return (
         db.query(Batch)
         .filter(Batch.faculty_id == faculty_id)
@@ -47,74 +89,132 @@ def get_faculty_batches(db: Session, faculty_id: int):
     )
 
 
-def get_batch_by_id(db: Session, batch_id: int, faculty_id: int):
+def get_batch_by_id(
+    db: Session,
+    batch_id: int,
+    faculty_id: int,
+) -> Batch | None:
+
     return (
         db.query(Batch)
-        .filter(Batch.id == batch_id, Batch.faculty_id == faculty_id)
+        .filter(
+            Batch.id == batch_id,
+            Batch.faculty_id == faculty_id,
+        )
         .first()
     )
 
 
-def get_batch_results(db: Session, batch_id: int):
-    """
-    Returns all resumes in a batch along with their analysis results
-    (against the batch's JD).
-    """
-    batch = db.query(Batch).filter(Batch.id == batch_id).first()
+def get_batch_results(
+    db: Session,
+    batch_id: int,
+) -> list[AnalysisResult] | None:
+
+    batch = (
+        db.query(Batch)
+        .filter(Batch.id == batch_id)
+        .first()
+    )
+
     if not batch:
         return None
 
-    resume_ids = (
-        db.query(BatchResume.resume_id)
-        .filter(BatchResume.batch_id == batch_id)
-        .all()
-    )
-    resume_ids = [r[0] for r in resume_ids]
+    resume_ids = [
+        resume_id
+        for (resume_id,) in (
+            db.query(BatchResume.resume_id)
+            .filter(BatchResume.batch_id == batch_id)
+            .all()
+        )
+    ]
 
-    results = (
+    if not resume_ids:
+        return []
+
+    return (
         db.query(AnalysisResult)
-        .filter(AnalysisResult.resume_id.in_(resume_ids), AnalysisResult.jd_id == batch.jd_id)
+        .filter(
+            AnalysisResult.resume_id.in_(resume_ids),
+            AnalysisResult.jd_id == batch.jd_id,
+        )
         .all()
     )
 
-    return results
 
+def get_batch_insights(
+    db: Session,
+    batch_id: int,
+) -> dict | None:
 
-def get_batch_insights(db: Session, batch_id: int):
-    results = get_batch_results(db, batch_id)
+    results = get_batch_results(
+        db,
+        batch_id,
+    )
 
     if not results:
         return None
 
     total = len(results)
 
-    # Score distribution
-    strong_fit = sum(1 for r in results if r.overall_score >= 75)
-    medium_fit = sum(1 for r in results if 50 <= r.overall_score < 75)
-    weak_fit = sum(1 for r in results if r.overall_score < 50)
+    strong_fit = sum(
+        1 for result in results
+        if result.overall_score >= 75
+    )
 
-    # Eligibility funnel
-    eligible = sum(1 for r in results if r.eligibility_status == "pass")
-    ineligible = sum(1 for r in results if r.eligibility_status == "fail")
-    unknown_eligibility = sum(1 for r in results if r.eligibility_status == "unknown")
+    medium_fit = sum(
+        1 for result in results
+        if 50 <= result.overall_score < 75
+    )
 
-    # Skill gap — count how many resumes are MISSING each must-have skill
+    weak_fit = sum(
+        1 for result in results
+        if result.overall_score < 50
+    )
+
+    eligible = sum(
+        1 for result in results
+        if result.eligibility_status == "pass"
+    )
+
+    ineligible = sum(
+        1 for result in results
+        if result.eligibility_status == "fail"
+    )
+
+    unknown_eligibility = sum(
+        1 for result in results
+        if result.eligibility_status == "unknown"
+    )
+
     missing_skill_counter = Counter()
-    for r in results:
-        for skill in (r.missing_must_have_skills or []):
+
+    for result in results:
+        for skill in result.missing_must_have_skills or []:
             missing_skill_counter[skill] += 1
 
     skill_gap = [
-        {"skill": skill, "missing_count": count, "missing_pct": round((count / total) * 100, 1)}
+        {
+            "skill": skill,
+            "missing_count": count,
+            "missing_pct": round(
+                (count / total) * 100,
+                1,
+            ),
+        }
         for skill, count in missing_skill_counter.most_common()
     ]
 
-    # Average score
-    avg_score = round(sum(r.overall_score for r in results) / total, 2)
+    average_score = round(
+        sum(
+            result.overall_score
+            for result in results
+        ) / total,
+        2,
+    )
 
     return {
         "total_resumes": total,
-        "average_score": avg_score,
+        "average_score": average_score,
         "score_distribution": {
             "strong_fit": strong_fit,
             "medium_fit": medium_fit,
@@ -129,12 +229,17 @@ def get_batch_insights(db: Session, batch_id: int):
     }
 
 
-def delete_batch(db: Session, batch_id: int, faculty_id: int):
+def delete_batch(
+    db: Session,
+    batch_id: int,
+    faculty_id: int,
+) -> bool | None:
+
     batch = (
         db.query(Batch)
         .filter(
             Batch.id == batch_id,
-            Batch.faculty_id == faculty_id
+            Batch.faculty_id == faculty_id,
         )
         .first()
     )
@@ -144,36 +249,36 @@ def delete_batch(db: Session, batch_id: int, faculty_id: int):
 
     jd_id = batch.jd_id
 
-    # Get resumes belonging to this batch
     resume_ids = [
-        r[0]
-        for r in (
+        resume_id
+        for (resume_id,) in (
             db.query(BatchResume.resume_id)
             .filter(BatchResume.batch_id == batch_id)
             .all()
         )
     ]
 
-    # Delete analysis results for this batch
+    # Delete analysis results belonging to this batch.
     if resume_ids:
         (
             db.query(AnalysisResult)
             .filter(
                 AnalysisResult.resume_id.in_(resume_ids),
-                AnalysisResult.jd_id == jd_id
+                AnalysisResult.jd_id == jd_id,
             )
             .delete(synchronize_session=False)
         )
 
-    # Delete batch-resume mappings
+    # Delete batch-resume mappings.
     (
         db.query(BatchResume)
         .filter(BatchResume.batch_id == batch_id)
         .delete(synchronize_session=False)
     )
 
-    # Delete resumes only if they are not used by another batch
+    # Delete resumes that are not used by another batch.
     for resume_id in resume_ids:
+
         other_batch_link = (
             db.query(BatchResume)
             .filter(BatchResume.resume_id == resume_id)
@@ -181,15 +286,17 @@ def delete_batch(db: Session, batch_id: int, faculty_id: int):
         )
 
         if not other_batch_link:
-            db.query(Resume).filter(
-                Resume.id == resume_id
-            ).delete(synchronize_session=False)
+            (
+                db.query(Resume)
+                .filter(Resume.id == resume_id)
+                .delete(synchronize_session=False)
+            )
 
-    # Delete batch
+    # Delete the batch.
     db.delete(batch)
     db.flush()
 
-    # Delete JD only if it is not used by another batch
+    # Delete JD if no other batch uses it.
     other_batch_with_jd = (
         db.query(Batch)
         .filter(Batch.jd_id == jd_id)
@@ -197,14 +304,12 @@ def delete_batch(db: Session, batch_id: int, faculty_id: int):
     )
 
     if not other_batch_with_jd:
-        db.query(JD).filter(
-            JD.id == jd_id
-        ).delete(synchronize_session=False)
+        (
+            db.query(JD)
+            .filter(JD.id == jd_id)
+            .delete(synchronize_session=False)
+        )
 
     db.commit()
 
     return True
-
-
-
-
